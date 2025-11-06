@@ -333,8 +333,7 @@ with gr.Blocks(theme=gr.themes.Citrus(), css=css) as demo:
         inputs=[image],
         outputs=[width, height]
     ).then(
-        fn=reset_.
-all,
+        fn=reset_all,
         inputs=None,
         outputs=[rotate_deg, move_forward, vertical_tilt, wideangle, is_reset],
         queue=False
