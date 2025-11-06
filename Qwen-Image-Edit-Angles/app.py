@@ -2,7 +2,6 @@ import gradio as gr
 import numpy as np
 import random
 import torch
-import spaces
 
 from PIL import Image
 from diffusers import FlowMatchEulerDiscreteScheduler
@@ -26,19 +25,19 @@ import tempfile
 dtype = torch.bfloat16
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-pipe = QwenImageEditPlusPipeline.from_pretrained("Qwen/Qwen-Image-Edit-2509", 
-                                                transformer= QwenImageTransformer2DModel.from_pretrained("linoyts/Qwen-Image-Edit-Rapid-AIO", 
+pipe = QwenImageEditPlusPipeline.from_pretrained("Qwen/Qwen-Image-Edit-2509",
+                                                transformer= QwenImageTransformer2DModel.from_pretrained("linoyts/Qwen-Image-Edit-Rapid-AIO",
                                                                                                          subfolder='transformer',
                                                                                                          torch_dtype=dtype,
                                                                                                          device_map='cuda'),torch_dtype=dtype).to(device)
 
 pipe.load_lora_weights(
-        "dx8152/Qwen-Edit-2509-Multiple-angles", 
+        "dx8152/Qwen-Edit-2509-Multiple-angles",
         weight_name="镜头转换.safetensors", adapter_name="angles"
     )
 
 # pipe.load_lora_weights(
-#         "lovis93/next-scene-qwen-image-lora-2509", 
+#         "lovis93/next-scene-qwen-image-lora-2509",
 #         weight_name="next-scene_lora-v2-3000.safetensors", adapter_name="next-scene"
 #     )
 pipe.set_adapters(["angles"], adapter_weights=[1.])
@@ -51,7 +50,7 @@ pipe.unload_lora_weights()
 pipe.transformer.__class__ = QwenImageTransformer2DModel
 pipe.transformer.set_attn_processor(QwenDoubleStreamAttnProcessorFA3())
 
-optimize_pipeline_(pipe, image=[Image.new("RGB", (1024, 1024)), Image.new("RGB", (1024, 1024))], prompt="prompt")
+#optimize_pipeline_(pipe, image=[Image.new("RGB", (1024, 1024)), Image.new("RGB", (1024, 1024))], prompt="prompt")
 
 
 MAX_SEED = np.iinfo(np.int32).max
@@ -99,7 +98,6 @@ def build_camera_prompt(rotate_deg, move_forward, vertical_tilt, wideangle):
     return final_prompt if final_prompt else "no camera movement"
 
 
-@spaces.GPU
 def infer_camera_edit(
     image,
     rotate_deg,
@@ -154,21 +152,21 @@ def create_video_between_images(input_image, output_image, prompt: str, request:
     """Create a video between the input and output images."""
     if input_image is None or output_image is None:
         raise gr.Error("Both input and output images are required to create a video.")
-    
+
     try:
-        
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
             input_image.save(tmp.name)
             input_image_path = tmp.name
-        
+
         output_pil = Image.fromarray(output_image.astype('uint8'))
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
             output_pil.save(tmp.name)
             output_image_path = tmp.name
-            
+
         video_path = _generate_video_segment(
-            input_image_path, 
-            output_image_path, 
+            input_image_path,
+            output_image_path,
             prompt if prompt else "Camera movement transformation",
             request
         )
@@ -191,9 +189,9 @@ def end_reset():
 def update_dimensions_on_upload(image):
     if image is None:
         return 1024, 1024
-    
+
     original_width, original_height = image.size
-    
+
     if original_width > original_height:
         new_width = 1024
         aspect_ratio = original_height / original_width
@@ -202,11 +200,11 @@ def update_dimensions_on_upload(image):
         new_height = 1024
         aspect_ratio = original_width / original_height
         new_width = int(new_height * aspect_ratio)
-        
+
     # Ensure dimensions are multiples of 8
     new_width = (new_width // 8) * 8
     new_height = (new_height // 8) * 8
-    
+
     return new_width, new_height
 
 
@@ -214,7 +212,7 @@ with gr.Blocks(theme=gr.themes.Citrus(), css=css) as demo:
     with gr.Column(elem_id="col-container"):
         gr.Markdown("## 🎬 Qwen Image Edit — Camera Angle Control")
         gr.Markdown("""
-            Qwen Image Edit 2509 for Camera Control ✨ 
+            Qwen Image Edit 2509 for Camera Control ✨
             Using [dx8152's Qwen-Edit-2509-Multiple-angles LoRA](https://huggingface.co/dx8152/Qwen-Edit-2509-Multiple-angles) and [Phr00t/Qwen-Image-Edit-Rapid-AIO](https://huggingface.co/Phr00t/Qwen-Image-Edit-Rapid-AIO/tree/main) for 4-step inference 💨
             """
         )
@@ -248,7 +246,7 @@ with gr.Blocks(theme=gr.themes.Citrus(), css=css) as demo:
                 create_video_button = gr.Button("🎥 Create Video Between Images", variant="secondary", visible=False)
                 with gr.Group(visible=False) as video_group:
                     video_output = gr.Video(label="Generated Video", show_download_button=True, autoplay=True)
-                    
+
     inputs = [
         image,rotate_deg, move_forward,
         vertical_tilt, wideangle,
@@ -270,16 +268,16 @@ with gr.Blocks(theme=gr.themes.Citrus(), css=css) as demo:
         # Show video button if we have both input and output images
         show_button = args[0] is not None and result_img is not None
         return result_img, result_seed, result_prompt, gr.update(visible=show_button)
-    
+
     run_event = run_btn.click(
-        fn=infer_and_show_video_button, 
-        inputs=inputs, 
+        fn=infer_and_show_video_button,
+        inputs=inputs,
         outputs=outputs + [create_video_button]
     )
 
     # Video creation
     create_video_button.click(
-        fn=lambda: gr.update(visible=True), 
+        fn=lambda: gr.update(visible=True),
         outputs=[video_group],
         api_name=False
     ).then(
@@ -304,7 +302,7 @@ with gr.Blocks(theme=gr.themes.Citrus(), css=css) as demo:
         cache_examples="lazy",
         elem_id="examples"
     )
-    
+
     # Image upload triggers dimension update and control reset
     image.upload(
         fn=update_dimensions_on_upload,
@@ -316,9 +314,9 @@ with gr.Blocks(theme=gr.themes.Citrus(), css=css) as demo:
         outputs=[rotate_deg, move_forward, vertical_tilt, wideangle, is_reset],
         queue=False
     ).then(
-        fn=end_reset, 
-        inputs=None, 
-        outputs=[is_reset], 
+        fn=end_reset,
+        inputs=None,
+        outputs=[is_reset],
         queue=False
     )
 
@@ -342,9 +340,9 @@ with gr.Blocks(theme=gr.themes.Citrus(), css=css) as demo:
 
     for control in [rotate_deg, move_forward, vertical_tilt]:
         control.release(fn=maybe_infer, inputs=control_inputs_with_flag, outputs=outputs + [create_video_button])
-    
+
     wideangle.input(fn=maybe_infer, inputs=control_inputs_with_flag, outputs=outputs + [create_video_button])
-    
+
     run_event.then(lambda img, *_: img, inputs=[result], outputs=[prev_output])
 
 demo.launch()
