@@ -25,40 +25,41 @@ import tempfile
 dtype = torch.bfloat16
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def get_pipeline(model_type="safetensors"):
+def get_pipeline(model_path, lora_path=None):
+    if not model_path:
+        raise gr.Error("Please select a model file.")
+
+    model_type = "GGUF" if model_path.lower().endswith(".gguf") else "safetensors"
+
     if model_type == "GGUF":
-        # Placeholder for GGUF model loading.
-        # This will be functional once a public GGUF model is available.
-        gguf_repo_id = "kroonen/Qwen-Image-Edit-Rapid-AIO-GGUF"
-        gguf_filename = "Qwen-Image-Edit-Rapid-AIO-F16.gguf"
-
-        local_gguf_path = hf_hub_download(repo_id=gguf_repo_id, filename=gguf_filename)
-
         transformer = QwenImageTransformer2DModel.from_single_file(
-            local_gguf_path,
+            model_path,
             quantization_config=GGUFQuantizationConfig(compute_dtype=dtype),
             torch_dtype=dtype,
             device_map='cuda'
         )
-
         pipe = QwenImageEditPlusPipeline.from_pretrained(
             "Qwen/Qwen-Image-Edit-2509",
             transformer=transformer,
             torch_dtype=dtype
         ).to(device)
-    else:
-        pipe = QwenImageEditPlusPipeline.from_pretrained("Qwen/Qwen-Image-Edit-2509",
-                                                        transformer= QwenImageTransformer2DModel.from_pretrained("linoyts/Qwen-Image-Edit-Rapid-AIO",
-                                                                                                                subfolder='transformer',
-                                                                                                                torch_dtype=dtype,
-                                                                                                                device_map='cuda'),torch_dtype=dtype).to(device)
-
-    pipe.load_lora_weights(
-            "dx8152/Qwen-Edit-2509-Multiple-angles",
-            weight_name="镜头转换.safetensors", adapter_name="angles"
+    else: # safetensors
+        transformer = QwenImageTransformer2DModel.from_pretrained(
+            model_path,
+            torch_dtype=dtype,
+            device_map='cuda'
         )
+        pipe = QwenImageEditPlusPipeline.from_pretrained(
+            "Qwen/Qwen-Image-Edit-2509",
+            transformer=transformer,
+            torch_dtype=dtype
+        ).to(device)
 
-    pipe.set_adapters(["angles"], adapter_weights=[1.])
+    if lora_path:
+        lora_dir = os.path.dirname(lora_path)
+        lora_filename = os.path.basename(lora_path)
+        pipe.load_lora_weights(lora_dir, weight_name=lora_filename, adapter_name="angles")
+        pipe.set_adapters(["angles"], adapter_weights=[1.])
     pipe.fuse_lora(adapter_names=["angles"], lora_scale=1.25)
     pipe.unload_lora_weights()
 
@@ -127,11 +128,12 @@ def infer_camera_edit(
     height,
     width,
     prev_output = None,
-    model_selection="safetensors",
+    model_path=None,
+    lora_path=None,
     progress=gr.Progress(track_tqdm=True)
 ):
 
-    pipe = get_pipeline(model_selection)
+    pipe = get_pipeline(model_path, lora_path)
 
     prompt = build_camera_prompt(rotate_deg, move_forward, vertical_tilt, wideangle)
     print(f"Generated Prompt: {prompt}")
@@ -253,7 +255,8 @@ with gr.Blocks(theme=gr.themes.Citrus(), css=css) as demo:
                         run_btn = gr.Button("Generate", variant="primary")
 
                 with gr.Accordion("Advanced Settings", open=False):
-                    model_selection = gr.Dropdown(label="Model Type", choices=["safetensors", "GGUF"], value="safetensors")
+                    model_path = gr.File(label="Select Model File (GGUF or Safetensors)")
+                    lora_path = gr.File(label="Select LoRA File (Optional)")
                     seed = gr.Slider(label="Seed", minimum=0, maximum=MAX_SEED, step=1, value=0)
                     randomize_seed = gr.Checkbox(label="Randomize Seed", value=True)
                     true_guidance_scale = gr.Slider(label="True Guidance Scale", minimum=1.0, maximum=10.0, step=0.1, value=1.0)
@@ -271,7 +274,7 @@ with gr.Blocks(theme=gr.themes.Citrus(), css=css) as demo:
     inputs = [
         image,rotate_deg, move_forward,
         vertical_tilt, wideangle,
-        seed, randomize_seed, true_guidance_scale, num_inference_steps, height, width, prev_output, model_selection
+        seed, randomize_seed, true_guidance_scale, num_inference_steps, height, width, prev_output, model_path, lora_path
     ]
     outputs = [result, seed, prompt_preview]
 
